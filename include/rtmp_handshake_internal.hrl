@@ -8,5 +8,8 @@
           peer_version :: binary(),
           timestamp    :: binary(),
           method       :: rtmp_handshake:handshake_method(),
-          recv_timeout :: timeout()
+          recv_timeout :: timeout(),
+          enable_log   :: false | true | {true, Type::any()}
         }).
+
+-define(HANDSHAKE_PACKET_SIZE, 1536).

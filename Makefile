@@ -17,7 +17,7 @@ edoc:
 
 .dialyzer.plt:
 	touch .dialyzer.plt
-	dialyzer --build_plt --plt .dialyzer.plt --apps erts kernel stdlib inets
+	dialyzer --build_plt --plt .dialyzer.plt --apps erts kernel stdlib inets crypto compiler
 
 dialyze: .dialyzer.plt
 	dialyzer --plt .dialyzer.plt -r ebin
