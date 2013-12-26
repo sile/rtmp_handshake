@@ -9,7 +9,7 @@
 %% Exported API
 %%--------------------------------------------------------------------------------
 -export([
-%         server_handshake/2,
+         server_handshake/2,
          client_handshake/2
         ]).
 
@@ -49,6 +49,23 @@ client_handshake(Socket, Options) ->
             try
                 {ok, State} = Module:client_init(Options2),
                 {ok, _} = do_client_handshake(Socket, Module, State, Options2),
+                ok
+            catch
+                throw:{?MODULE, Response} -> Response
+            end
+    end.
+
+-spec server_handshake(gen_tcp:socket(), [option()]) -> ok | {error, Reason::term()}.
+server_handshake(Socket, Options) ->
+    case inet:getopts(Socket, [active]) of
+        {error, Reason}        -> {error, Reason};
+        {ok, [{active, true}]} -> {error, {unsupported, active_socket}};
+        _                      ->
+            {ok, Options2} = parse_handshake_option(Options),
+            Module = get_handshake_module(Options2),
+            try
+                {ok, State} = Module:server_init(Options2),
+                {ok, _} = do_server_handshake(Socket, Module, State, Options2),
                 ok
             catch
                 throw:{?MODULE, Response} -> Response
@@ -102,6 +119,33 @@ do_client_handshake(Socket, Module, State0, Options) ->
     
     check(Module:client_finish(S2Packet, State3, Options)).
 
+-spec do_server_handshake(gen_tcp:socket(), module(), term(), #handshake_option{}) -> ok | {error, Reason::term()}.
+do_server_handshake(Socket, Module, State0, Options) ->
+    #handshake_option{method = Method} = Options,
+
+    %% c0,s0
+    RequiredRtmpVersion = recv_0(Socket, Options),
+    ok = log(?MODULE, ?LINE, [{method, Method}, {phase, c0}, {rtmp_version, RequiredRtmpVersion}], Options),
+    {ok, ServerRtmpVersion, State1} = check(Module:s0(RequiredRtmpVersion, State0, Options)),
+    ok = log(?MODULE, ?LINE, [{method, Method}, {phase, s0}, {rtmp_version, ServerRtmpVersion}], Options),
+    ok = send_0(Socket, ServerRtmpVersion, Options),
+
+    %% c1,s1
+    C1Packet = recv_1(Socket, Options),
+    ok = log(?MODULE, ?LINE, [{method, Method}, {phase, c1}, {packet, C1Packet}], Options),
+    {ok, S1Packet, State2} = check(Module:s1(C1Packet, State1, Options)),
+    ok = log(?MODULE, ?LINE, [{method, Method}, {phase, s1}, {packet, S1Packet}], Options),
+    ok = send_1(Socket, S1Packet, Options),
+
+    %% s2,c2
+    {ok, S2Packet, State3} = check(Module:s2(State2, Options)),
+    ok = log(?MODULE, ?LINE, [{method, Method}, {phase, s2}, {packet, S2Packet}], Options),
+    ok = send_2(Socket, S2Packet, Options),
+    C2Packet = recv_1(Socket, Options),
+    ok = log(?MODULE, ?LINE, [{method, Method}, {phase, c2}, {packet, C2Packet}], Options),
+
+    check(Module:server_finish(C2Packet, State3, Options)).
+    
 -spec check(Result) -> OkValue when
       Result  :: {error, Reason::term()} | OkValue,
       OkValue :: term().
