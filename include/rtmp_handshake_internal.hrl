@@ -13,3 +13,11 @@
         }).
 
 -define(HANDSHAKE_PACKET_SIZE, 1536).
+
+-define(LOG(Params, Options),
+        case Options#handshake_option.enable_log of
+            false     -> ok;
+            true      -> error_logger:info_report([{module, ?MODULE}, {line, ?LINE}, {pid, self()} | Params]);
+            {true, _} -> error_logger:info_report(element(2, Options#handshake_option.enable_log),
+                                                  [{module, ?MODULE}, {line, ?LINE}, {pid, self()} | Params])
+        end).

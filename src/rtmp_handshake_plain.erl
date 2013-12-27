@@ -10,7 +10,7 @@
 %%--------------------------------------------------------------------------------
 %% 'rtmp_handshake_interface' Callback API
 %%--------------------------------------------------------------------------------
--export([client_init/1, c0/2, c1/2, c2/4, client_finish/3]).
+-export([c1/2, c2/3, client_finish/3]).
 -export([server_init/1, s0/3, s1/3, s2/2, server_finish/3]).
 
 %%--------------------------------------------------------------------------------
@@ -25,30 +25,18 @@
 %% 'rtmp_handshake_interface' Callback Functions
 %%--------------------------------------------------------------------------------
 %% @hidden
-client_init(_Options) ->
-    {ok, []}.
-
-%% @hidden
-c0(State, Options) ->
-    {ok, Options#handshake_option.rtmp_version, State}.
-
-%% @hidden
 c1(State, Options) ->
     #handshake_option{peer_version = Version, timestamp = Timetamp} = Options,
-    Head = <<Timetamp:32, Version:4/binary>>,
-    Tail = crypto:rand_bytes(?HANDSHAKE_PACKET_SIZE - byte_size(Head)),
-    {ok, <<Head/binary, Tail/binary>>, State}.
+    C1Packet = <<Timetamp:32, Version:4/binary, (crypto:rand_bytes(?HANDSHAKE_PACKET_SIZE - 8))/binary>>,
+    {ok, C1Packet, State}.
 
 %% @hidden
-c2(ServerRtmpVersion, S1Packet, State, Options) ->
-    case ServerRtmpVersion =:= Options#handshake_option.rtmp_version of
-        false -> {error, {unsupported_rtmp_version, ServerRtmpVersion}};
-        true  -> {ok, S1Packet, State}
-    end.
+c2(S1Packet, State, _Options) ->
+    {ok, S1Packet, State}.
 
 %% @hidden
-client_finish(_S2Packet, State, _Options) ->
-    {ok, State}.
+client_finish(_S2Packet, _State, _Options) ->
+    ok.
 
 %% @hidden
 server_init(_Options) ->
@@ -75,6 +63,3 @@ s2(State, _Options) ->
 %% @hidden
 server_finish(_C2Packet, State, _Options) ->
     {ok, State}.
-
-
-
