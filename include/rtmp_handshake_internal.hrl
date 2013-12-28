@@ -4,10 +4,9 @@
 
 -record(handshake_option,
         {
-          rtmp_version :: non_neg_integer(),
-          peer_version :: binary(),
-          timestamp    :: binary(),
-          method       :: rtmp_handshake:handshake_method(),
+          rtmp_version :: rtmp_handshake:rtmp_version(),
+          app_version  :: rtmp_handshake:application_version(),
+          timestamp    :: rtmp_handshake:milliseconds(),
           recv_timeout :: timeout(),
           enable_log   :: false | true | {true, Type::any()}
         }).
@@ -21,3 +20,6 @@
             {true, _} -> error_logger:info_report(element(2, Options#handshake_option.enable_log),
                                                   [{module, ?MODULE}, {line, ?LINE}, {pid, self()} | Params])
         end).
+
+-define(CLIENT_DEFAULT_APP_VERSION, {9,0,124,2}).
+-define(SERVER_DEFAULT_APP_VERSION, {5,0,3,1}).

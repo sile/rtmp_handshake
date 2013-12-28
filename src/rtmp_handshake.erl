@@ -14,31 +14,35 @@
         ]).
 
 -export_type([
-              handshake_method/0,
-              option/0,
               rtmp_version/0,
-              peer_version/0,
-              handshake_result/0
+              application_version/0,
+              milliseconds/0,
+              option/0,
+              handshake_result/0,
+
+              authentification_method/0
              ]).
 
 %%--------------------------------------------------------------------------------
 %% Macros & Types
 %%--------------------------------------------------------------------------------
--type option() :: {rtmp_version,  non_neg_integer()}
-                | {peer_version,  binary()}
-                | {timestamp,     non_neg_integer()}
-                | {method,        handshake_method()}
-                | {recv_timeout,  timeout()}
-                | {enable_log,    false | true | {true, Type::any()}}.
+-type option() :: {rtmp_version, rtmp_version()}
+                | {app_version,  application_version()}
+                | {timestamp,    milliseconds()}
+                | {recv_timeout, timeout()}
+                | {enable_log,   false | true | {true, Type::any()}}.
 
--type handshake_method() :: plain | digest.
+-type rtmp_version()        :: 0..255.
+-type application_version() :: {0..255, 0..255, 0..255, 0..255}.
+-type milliseconds()        :: non_neg_integer().
 
--type rtmp_version() :: 0..255.
--type peer_version() :: binary().
+-type handshake_result() :: [{rtmp_version,       rtmp_version()} |
+                             {server_app_version, application_version()} |
+                             {client_app_version, application_version()} |
+                             {server_timestamp,   milliseconds()} |
+                             {client_timestamp,   milliseconds()}].
 
--type handshake_result() :: [{rtmp_version, rtmp_version()} |
-                             {timestamp, non_neg_integer()} |
-                             {version, peer_version()}].
+-type authentification_method() :: none.
 
 %%--------------------------------------------------------------------------------
 %% Exported Functions
@@ -48,7 +52,7 @@ client_handshake(Socket, Options) ->
     case check_socket(Socket) of
         {error, Reason} -> {error, Reason};
         ok              ->
-            {ok, Options2} = parse_handshake_option(Options),
+            {ok, Options2} = parse_handshake_option(Options ++ [{app_version, ?CLIENT_DEFAULT_APP_VERSION}]),
             try
                 do_client_handshake(Socket, Options2)
             catch
@@ -60,13 +64,10 @@ client_handshake(Socket, Options) ->
 server_handshake(Socket, Options) ->
     case check_socket(Socket) of
         {error, Reason} -> {error, Reason};
-        _               ->
-            {ok, Options2} = parse_handshake_option(Options),
-            Module = get_handshake_module(Options2),
+        ok              ->
+            {ok, Options2} = parse_handshake_option(Options ++ [{app_version, ?SERVER_DEFAULT_APP_VERSION}]),
             try
-                {ok, State} = Module:server_init(Options2),
-                {ok, _} = do_server_handshake(Socket, Module, State, Options2),
-                ok
+                do_server_handshake(Socket, Options2)
             catch
                 throw:{?MODULE, Response} -> Response
             end
@@ -75,38 +76,28 @@ server_handshake(Socket, Options) ->
 %%--------------------------------------------------------------------------------
 %% Internal Functions
 %%--------------------------------------------------------------------------------
--spec get_handshake_module(#handshake_option{}) -> module().
-get_handshake_module(#handshake_option{method = plain})  -> rtmp_handshake_plain;
-get_handshake_module(#handshake_option{method = digest}) -> rtmp_handshake_digest.
-
 -spec parse_handshake_option([option()]) -> {ok, #handshake_option{}}.
 parse_handshake_option(Options) ->
     Opt = #handshake_option{
              rtmp_version = proplists:get_value(rtmp_version, Options, 3),
-             peer_version = proplists:get_value(peer_version, Options, <<0, 0, 0, 0>>), % 5.0.3.1 for server, 9.0.124.2 for client
-             timestamp    = proplists:get_value(timestamp, Options, 0),
-             method       = proplists:get_value(method, Options, plain),
+             app_version  = proplists:get_value(app_version,  Options, {0, 0, 0, 0}),
+             timestamp    = proplists:get_value(timestamp,    Options, 0),
              recv_timeout = proplists:get_value(recv_timeout, Options, 5000),
-             enable_log   = proplists:get_value(enable_log, Options, false)
+             enable_log   = proplists:get_value(enable_log,   Options, false)
             },
     {ok, Opt}.
 
--spec do_client_handshake(gen_tcp:socket(), #handshake_option{}) -> {ok, handshake_result()} | {error, Reason::term()}.
+-spec do_client_handshake(gen_tcp:socket(), #handshake_option{}) -> {ok, handshake_result()}.
 do_client_handshake(Socket, Options) ->
-    #handshake_option{rtmp_version = ClientRtmpVersion, peer_version = ClientVersion, timestamp = ClientTimestamp} = Options,
+    #handshake_option{rtmp_version = ClientRtmpVersion, app_version = ClientVersion, timestamp = ClientTimestamp} = Options,
 
     %% c0,c1
     ClientRtmpVersion = Options#handshake_option.rtmp_version,
     ok = ?LOG([{phase, c0}, {client_rtmp_version, ClientRtmpVersion}], Options),
     ok = send_0(Socket, ClientRtmpVersion, Options),
 
-    {Module, ModuleVersion, AuthentificationMethod} = % TODO: delete: ModuleVersion
-        if
-            ClientVersion < <<9,0,124,0>>  -> {rtmp_handshake_plain,  none,     none};
-            ClientVersion < <<10,0,32,18>> -> {rtmp_handshake_digest, version1, digest_version1};
-            true                           -> {rtmp_handshake_digest, version2, digest_version2}
-        end,
-    {ok, C1Packet, State0} = check(Module:c1(ModuleVersion, Options)),
+    {Module, AuthentificationMethod} = {rtmp_handshake_plain, none},
+    {ok, C1Packet, State0} = check(Module:c1(AuthentificationMethod, Options)),
     ok = ?LOG([{phase, c1}, {authentification, AuthentificationMethod}, {client_version, ClientVersion}, {client_timestamp, ClientTimestamp}, {packet, C1Packet}], Options),
     ok = send_1(Socket, C1Packet, Options),
 
@@ -117,7 +108,8 @@ do_client_handshake(Socket, Options) ->
                    false -> {error, {unsupported_rtmp_version, ServerRtmpVersion}};
                    true  -> ok
                end),
-    <<ServerTimestamp:32, ServerVersion:4/binary, _/binary>> = S1Packet = recv_1(Socket, Options),
+    <<ServerTimestamp:32, V1, V2, V3, V4, _/binary>> = S1Packet = recv_1(Socket, Options),
+    ServerVersion = {V1, V2, V3, V4},
     ok = ?LOG([{phase, s1}, {server_version, ServerVersion}, {server_timestamp, ServerTimestamp}, {packet, S1Packet}], Options),
         
     %% c2,s2
@@ -128,36 +120,49 @@ do_client_handshake(Socket, Options) ->
     ok = ?LOG([{phase, s2}, {packet, S2Packet}], Options),
     
     ok = check(Module:client_finish(S2Packet, State1, Options)),
-    {ok, [{rtmp_version, ServerRtmpVersion},
-          {timestmap,    ServerTimestamp},
-          {version,      ServerVersion}]}.
+    {ok, [{rtmp_version,       ServerRtmpVersion},
+          {server_app_version, ServerVersion},
+          {client_app_version, ClientVersion},
+          {server_timestmap,   ServerTimestamp},
+          {client_timestamp,   ClientTimestamp}]}.
 
--spec do_server_handshake(gen_tcp:socket(), module(), term(), #handshake_option{}) -> ok | {error, Reason::term()}.
-do_server_handshake(Socket, Module, State0, Options) ->
-    #handshake_option{method = Method} = Options,
+-spec do_server_handshake(gen_tcp:socket(), #handshake_option{}) -> {ok, handshake_result()}.
+do_server_handshake(Socket, Options) ->
+    #handshake_option{rtmp_version = ServerRtmpVersion, app_version = ServerVersion, timestamp = ServerTimestamp} = Options,
 
     %% c0,s0
-    RequiredRtmpVersion = recv_0(Socket, Options),
-    ok = rtmp_handshake_util:log(?MODULE, ?LINE, [{method, Method}, {phase, c0}, {rtmp_version, RequiredRtmpVersion}], Options),
-    {ok, ServerRtmpVersion, State1} = check(Module:s0(RequiredRtmpVersion, State0, Options)),
-    ok = rtmp_handshake_util:log(?MODULE, ?LINE, [{method, Method}, {phase, s0}, {rtmp_version, ServerRtmpVersion}], Options),
+    ClientRtmpVersion = recv_0(Socket, Options),
+    ok = ?LOG([{phase, c0}, {client_rtmp_version, ClientRtmpVersion}], Options),
+    ok = check(case ClientRtmpVersion >= ServerRtmpVersion of
+                   false -> {error, {unsupported_rtmp_version, ClientRtmpVersion}};
+                   true  -> ok
+               end),
+    ok = ?LOG([{phase, s0}, {server_rtmp_version, ServerRtmpVersion}], Options),
     ok = send_0(Socket, ServerRtmpVersion, Options),
 
     %% c1,s1
-    C1Packet = recv_1(Socket, Options),
-    ok = rtmp_handshake_util:log(?MODULE, ?LINE, [{method, Method}, {phase, c1}, {packet, C1Packet}], Options),
-    {ok, S1Packet, State2} = check(Module:s1(C1Packet, State1, Options)),
-    ok = rtmp_handshake_util:log(?MODULE, ?LINE, [{method, Method}, {phase, s1}, {packet, S1Packet}], Options),
+    <<ClientTimestamp:32, V1, V2, V3, V4, _/binary>> = C1Packet = recv_1(Socket, Options),
+    ClientVersion = {V1, V2, V3, V4},
+    ok = ?LOG([{phase, c1}, {client_timestamp, ClientTimestamp}, {client_version, ClientVersion}, {packet, C1Packet}], Options),
+
+    {Module, AuthentificationMethod} = {rtmp_handshake_plain, none},
+    {ok, S1Packet, State0} = check(Module:s1(AuthentificationMethod, C1Packet, Options)),
+    ok = ?LOG([{phase, s1}, {packet, S1Packet}], Options),
     ok = send_1(Socket, S1Packet, Options),
 
     %% s2,c2
-    {ok, S2Packet, State3} = check(Module:s2(State2, Options)),
-    ok = rtmp_handshake_util:log(?MODULE, ?LINE, [{method, Method}, {phase, s2}, {packet, S2Packet}], Options),
+    {ok, S2Packet, State1} = check(Module:s2(State0, Options)),
+    ok = ?LOG([{phase, s2}, {packet, S2Packet}], Options),
     ok = send_2(Socket, S2Packet, Options),
     C2Packet = recv_1(Socket, Options),
-    ok = rtmp_handshake_util:log(?MODULE, ?LINE, [{method, Method}, {phase, c2}, {packet, C2Packet}], Options),
+    ok = ?LOG([{phase, c2}, {packet, C2Packet}], Options),
 
-    check(Module:server_finish(C2Packet, State3, Options)).
+    ok = check(Module:server_finish(C2Packet, State1, Options)),
+    {ok, [{rtmp_version,       ServerRtmpVersion},
+          {server_app_version, ServerVersion},
+          {client_app_version, ClientVersion},
+          {server_timestmap,   ServerTimestamp},
+          {client_timestamp,   ClientTimestamp}]}.
     
 -spec check(Result) -> OkValue when
       Result  :: {error, Reason::term()} | OkValue,

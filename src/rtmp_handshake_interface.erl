@@ -16,13 +16,11 @@
 %%--------------------------------------------------------------------------------
 %% Callback API
 %%--------------------------------------------------------------------------------
--callback c1(client_state(), #handshake_option{}) -> {ok, C1Packet::binary(), client_state()} | {error, Reason::term()}.
+-callback c1(rtmp_handshake:authentification_method(), #handshake_option{}) -> {ok, C1Packet::binary(), client_state()} | {error, Reason::term()}.
 -callback c2(S1Pakcet::binary(), client_state(), #handshake_option{}) -> {ok, C2Packet::binary(), client_state()} | {error, Reason::term()}.
 -callback client_finish(S2Packet::binary(), client_state(), #handshake_option{}) -> ok | {error, Reason::term()}.
 
--callback server_init(#handshake_option{}) -> {ok, server_state()}.
--callback s0(rtmp_handshake:rtmp_version(), server_state(), #handshake_option{}) -> {ok, rtmp_handshake:rtmp_version(), server_state()} | {error, Reason::term()}.
--callback s1(C1Packet::binary(), server_state(), #handshake_option{}) -> {ok, S1Pakcet::binary(), server_state()} | {error, Reason::term()}.
+-callback s1(rtmp_handshake:authentification_method(), C1Packet::binary(), #handshake_option{}) -> {ok, S1Pakcet::binary(), server_state()} | {error, Reason::term()}.
 -callback s2(server_state(), #handshake_option{}) -> {ok, S2Packet::binary(), server_state()} | {error, Reason::term()}.
 -callback server_finish(C2Packet::binary(), server_state(), #handshake_option{}) -> ok | {error, Reason::term()}.
 
