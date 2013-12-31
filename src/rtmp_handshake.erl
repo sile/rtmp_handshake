@@ -42,7 +42,7 @@
                              {server_timestamp,   milliseconds()} |
                              {client_timestamp,   milliseconds()}].
 
--type authentification_method() :: none.
+-type authentification_method() :: none | digest_version1.
 
 %%--------------------------------------------------------------------------------
 %% Exported Functions
@@ -96,7 +96,11 @@ do_client_handshake(Socket, Options) ->
     ok = ?LOG([{phase, c0}, {client_rtmp_version, ClientRtmpVersion}], Options),
     ok = send_0(Socket, ClientRtmpVersion, Options),
 
-    {Module, AuthentificationMethod} = {rtmp_handshake_plain, none},
+    {Module, AuthentificationMethod} = 
+        if
+            ClientVersion < {9,0,124,0} -> {rtmp_handshake_plain, none};
+            true                        -> {rtmp_handshake_digest, digest_version1}
+        end,
     {ok, C1Packet, State0} = check(Module:c1(AuthentificationMethod, Options)),
     ok = ?LOG([{phase, c1}, {authentification, AuthentificationMethod}, {client_version, ClientVersion}, {client_timestamp, ClientTimestamp}, {packet, C1Packet}], Options),
     ok = send_1(Socket, C1Packet, Options),
@@ -145,7 +149,11 @@ do_server_handshake(Socket, Options) ->
     ClientVersion = {V1, V2, V3, V4},
     ok = ?LOG([{phase, c1}, {client_timestamp, ClientTimestamp}, {client_version, ClientVersion}, {packet, C1Packet}], Options),
 
-    {Module, AuthentificationMethod} = {rtmp_handshake_plain, none},
+    {Module, AuthentificationMethod} = 
+        if
+            ClientVersion < {9,0,124,0} -> {rtmp_handshake_plain, none};
+            true                        -> {rtmp_handshake_digest, digest_version1}
+        end,
     {ok, S1Packet, State0} = check(Module:s1(AuthentificationMethod, C1Packet, Options)),
     ok = ?LOG([{phase, s1}, {packet, S1Packet}], Options),
     ok = send_1(Socket, S1Packet, Options),
