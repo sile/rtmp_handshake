@@ -98,8 +98,9 @@ do_client_handshake(Socket, Options) ->
 
     {Module, AuthentificationMethod} = 
         if
-            ClientVersion < {9,0,124,0} -> {rtmp_handshake_plain, none};
-            true                        -> {rtmp_handshake_digest, digest_version1}
+            ClientVersion < {9,0,124,0}  -> {rtmp_handshake_plain, none};
+            ClientVersion < {10,0,32,18} -> {rtmp_handshake_digest, digest_version1};
+            true                         -> {rtmp_handshake_digest, digest_version2}
         end,
     {ok, C1Packet, State0} = check(Module:c1(AuthentificationMethod, Options)),
     ok = ?LOG([{phase, c1}, {authentification, AuthentificationMethod}, {client_version, ClientVersion}, {client_timestamp, ClientTimestamp}, {packet, C1Packet}], Options),
@@ -151,8 +152,9 @@ do_server_handshake(Socket, Options) ->
 
     {Module, AuthentificationMethod} = 
         if
-            ClientVersion < {9,0,124,0} -> {rtmp_handshake_plain, none};
-            true                        -> {rtmp_handshake_digest, digest_version1}
+            ClientVersion < {9,0,124,0}  -> {rtmp_handshake_plain, none};
+            ClientVersion < {10,0,32,18} -> {rtmp_handshake_digest, digest_version1};
+            true                         -> {rtmp_handshake_digest, digest_version2}
         end,
     {ok, S1Packet, State0} = check(Module:s1(AuthentificationMethod, C1Packet, Options)),
     ok = ?LOG([{phase, s1}, {packet, S1Packet}], Options),

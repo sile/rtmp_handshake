@@ -41,8 +41,11 @@
 %% 'rtmp_handshake_interface' Callback Functions
 %%--------------------------------------------------------------------------------
 %% @hidden
-c1(digest_version1, Options) ->
-    SchemeVersion = version1,
+c1(AuthMethod, Options) ->
+    SchemeVersion = case AuthMethod of
+                        digest_version1 -> version1;
+                        digest_version2 -> version2
+                    end,
     {C1Packet, ClientDigest} = generate_phase1_packet_and_digest(SchemeVersion, client, Options),
     State = #state{
                scheme_version = SchemeVersion,
@@ -71,8 +74,11 @@ client_finish(S2Packet, State, _Options) ->
     end.
 
 %% @hidden
-s1(digest_version1, C1Packet, Options) ->
-    SchemeVersion = version1,
+s1(AuthMethod, C1Packet, Options) ->
+    SchemeVersion = case AuthMethod of
+                        digest_version1 -> version1;
+                        digest_version2 -> version2
+                    end,
     case validate_digest(SchemeVersion, client, C1Packet) of
         {error, Reason}    -> {error, Reason};
         {ok, ClientDigest} ->
@@ -121,6 +127,10 @@ generate_phase2_packet(Key, PeerDigest) ->
 -spec extract_digest(scheme_version(), binary()) -> {LeftBytes::binary(), Digest::binary(), RightBytes::binary()}.
 extract_digest(version1, <<_:8/binary, P1, P2, P3, P4, _/binary>> = Bytes) ->
     Offset = (P1 + P2 + P3 + P4) rem 728 + 12,
+    <<Left:Offset/binary, Digest:?DIGEST_SIZE/binary, Right/binary>> = Bytes,
+    {Left, Digest, Right};
+extract_digest(version2, <<_:772/binary, P1, P2, P3, P4, _/binary>> = Bytes) ->
+    Offset = (P1 + P2 + P3 + P4) rem 728 + 776,
     <<Left:Offset/binary, Digest:?DIGEST_SIZE/binary, Right/binary>> = Bytes,
     {Left, Digest, Right}.
 
