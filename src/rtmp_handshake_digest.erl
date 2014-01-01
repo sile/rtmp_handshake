@@ -52,26 +52,22 @@ c1(AuthMethod, Options) ->
                server_digest  = <<"">>,
                client_digest  = ClientDigest
               },
-    {ok, C1Packet, State}.
+    {C1Packet, State}.
 
 %% @hidden
 c2(S1Packet, State, _Options) ->
     #state{scheme_version = SchemeVersion} = State,
-    case validate_digest(SchemeVersion, server, S1Packet) of
-        {error, Reason}    -> {error, Reason};
-        {ok, ServerDigest} ->
-            C2Packet = generate_phase2_packet(?GENUINE_FP_KEY, ServerDigest),
-            {ok, C2Packet, State#state{server_digest = ServerDigest}}
-    end.
+    {Left, ServerDigest, Right} = extract_digest(SchemeVersion, S1Packet),
+    IsValid = ServerDigest =:= crypto:hmac(sha256, get_digest_key(server), <<Left/binary, Right/binary>>),
+    C2Packet = generate_phase2_packet(?GENUINE_FP_KEY, ServerDigest),
+    {IsValid, C2Packet, State#state{server_digest = ServerDigest}}.
 
 %% @hidden
 client_finish(S2Packet, State, _Options) ->
     #state{client_digest = ClientDigest} = State,
     <<Bytes:(?HANDSHAKE_PACKET_SIZE - ?DIGEST_SIZE)/binary, S2Digest/binary>> = S2Packet,
-    case crypto:hmac(sha256, crypto:hmac(sha256, ?GENUINE_FMS_KEY, ClientDigest), Bytes) of
-        S2Digest -> ok;
-        _Other   -> {error, {authentification_failed, digest_mismatch}}
-    end.
+    IsValid = S2Digest =:= crypto:hmac(sha256, crypto:hmac(sha256, ?GENUINE_FMS_KEY, ClientDigest), Bytes),
+    IsValid.
 
 %% @hidden
 s1(AuthMethod, C1Packet, Options) ->
@@ -79,32 +75,28 @@ s1(AuthMethod, C1Packet, Options) ->
                         digest_version1 -> version1;
                         digest_version2 -> version2
                     end,
-    case validate_digest(SchemeVersion, client, C1Packet) of
-        {error, Reason}    -> {error, Reason};
-        {ok, ClientDigest} ->
-            {S1Packet, ServerDigest} = generate_phase1_packet_and_digest(SchemeVersion, server, Options),
-            State = #state{
-                       scheme_version = SchemeVersion,
-                       server_digest  = ServerDigest,
-                       client_digest  = ClientDigest
-                      },
-            {ok, S1Packet, State}
-    end.
+    {Left, ClientDigest, Right} = extract_digest(SchemeVersion, C1Packet),
+    IsValid = ClientDigest =:= crypto:hmac(sha256, get_digest_key(client), <<Left/binary, Right/binary>>),
+    {S1Packet, ServerDigest} = generate_phase1_packet_and_digest(SchemeVersion, server, Options),
+    State = #state{
+               scheme_version = SchemeVersion,
+               server_digest  = ServerDigest,
+               client_digest  = ClientDigest
+              },
+    {IsValid, S1Packet, State}.
 
 %% @hidden
 s2(State, _Options) ->
     #state{client_digest = ClientDigest} = State,
     S2Packet = generate_phase2_packet(?GENUINE_FMS_KEY, ClientDigest),
-    {ok, S2Packet, State}.
+    {S2Packet, State}.
 
 %% @hidden
 server_finish(C2Packet, State, _Options) ->
     #state{server_digest = ServerDigest} = State,
     <<Bytes:(?HANDSHAKE_PACKET_SIZE - ?DIGEST_SIZE)/binary, C2Digest/binary>> = C2Packet,
-    case crypto:hmac(sha256, crypto:hmac(sha256, ?GENUINE_FP_KEY, ServerDigest), Bytes) of
-        C2Digest -> ok;
-        _Other   -> {error, {authentification_failed, digest_mismatch}}
-    end.
+    IsValid = C2Digest =:= crypto:hmac(sha256, crypto:hmac(sha256, ?GENUINE_FP_KEY, ServerDigest), Bytes),
+    IsValid.
 
 %%--------------------------------------------------------------------------------
 %% Internal Functions
@@ -133,14 +125,6 @@ extract_digest(version2, <<_:772/binary, P1, P2, P3, P4, _/binary>> = Bytes) ->
     Offset = (P1 + P2 + P3 + P4) rem 728 + 776,
     <<Left:Offset/binary, Digest:?DIGEST_SIZE/binary, Right/binary>> = Bytes,
     {Left, Digest, Right}.
-
--spec validate_digest(scheme_version(), server|client, binary()) -> {ok, binary()} | {error, Reason::term()}.
-validate_digest(SchemeVersion, Role, Bytes) ->
-    {Left, Digest, Right} = extract_digest(SchemeVersion, Bytes),
-    case crypto:hmac(sha256, get_digest_key(Role), <<Left/binary, Right/binary>>) of
-        Digest -> {ok, Digest};
-        _Other -> {error, {authentification_failed, digest_mismatch}}
-    end.
 
 -spec get_digest_key(server|client) -> binary().
 get_digest_key(server) -> binary:part(?GENUINE_FMS_KEY, 0, 36);

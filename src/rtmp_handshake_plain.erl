@@ -26,27 +26,27 @@
 %%--------------------------------------------------------------------------------
 %% @hidden
 c1(none, Options) ->
-    {ok, generate_phase1_packet(Options), []}.
+    {generate_phase1_packet(Options), []}.
 
 %% @hidden
 c2(S1Packet, State, _Options) ->
-    {ok, S1Packet, State}.
+    {true, S1Packet, State}.
 
 %% @hidden
 client_finish(_S2Packet, _State, _Options) ->
-    ok.
+    true.
 
 %% @hidden
 s1(none, C1Packet, Options) ->
-    {ok, generate_phase1_packet(Options), #server_state{c1_packet = C1Packet}}.
+    {true, generate_phase1_packet(Options), #server_state{c1_packet = C1Packet}}.
 
 %% @hidden
 s2(State, _Options) ->
-    {ok, State#server_state.c1_packet, State}.
+    {State#server_state.c1_packet, State}.
 
 %% @hidden
 server_finish(_C2Packet, _State, _Options) ->
-    ok.
+    true.
 
 %%--------------------------------------------------------------------------------
 %% Internal Functions

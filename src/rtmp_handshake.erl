@@ -20,7 +20,7 @@
               option/0,
               handshake_result/0,
 
-              authentification_method/0
+              validation_method/0
              ]).
 
 %%--------------------------------------------------------------------------------
@@ -40,9 +40,11 @@
                              {server_app_version, application_version()} |
                              {client_app_version, application_version()} |
                              {server_timestamp,   milliseconds()} |
-                             {client_timestamp,   milliseconds()}].
+                             {client_timestamp,   milliseconds()} |
+                             {validation_method,  validation_method()} |
+                             {valid,              boolean()}].
 
--type authentification_method() :: none | digest_version1.
+-type validation_method() :: none | digest_version1 | digest_version2.
 
 %%--------------------------------------------------------------------------------
 %% Exported Functions
@@ -96,14 +98,14 @@ do_client_handshake(Socket, Options) ->
     ok = ?LOG([{phase, c0}, {client_rtmp_version, ClientRtmpVersion}], Options),
     ok = send_0(Socket, ClientRtmpVersion, Options),
 
-    {Module, AuthentificationMethod} = 
+    {Module, ValidationMethod} = 
         if
             ClientVersion < {9,0,124,0}  -> {rtmp_handshake_plain, none};
             ClientVersion < {10,0,32,18} -> {rtmp_handshake_digest, digest_version1};
             true                         -> {rtmp_handshake_digest, digest_version2}
         end,
-    {ok, C1Packet, State0} = check(Module:c1(AuthentificationMethod, Options)),
-    ok = ?LOG([{phase, c1}, {authentification, AuthentificationMethod}, {client_version, ClientVersion}, {client_timestamp, ClientTimestamp}, {packet, C1Packet}], Options),
+    {C1Packet, State0} = Module:c1(ValidationMethod, Options),
+    ok = ?LOG([{phase, c1}, {validation, ValidationMethod}, {client_version, ClientVersion}, {client_timestamp, ClientTimestamp}, {packet, C1Packet}], Options),
     ok = send_1(Socket, C1Packet, Options),
 
     %% s0,s1
@@ -118,18 +120,20 @@ do_client_handshake(Socket, Options) ->
     ok = ?LOG([{phase, s1}, {server_version, ServerVersion}, {server_timestamp, ServerTimestamp}, {packet, S1Packet}], Options),
         
     %% c2,s2
-    {ok, C2Packet, State1} = check(Module:c2(S1Packet, State0, Options)),
+    {Valid1, C2Packet, State1} = Module:c2(S1Packet, State0, Options),
     ok = ?LOG([{phase, c2}, {packet, C2Packet}], Options),
     ok = send_2(Socket, C2Packet, Options),
     S2Packet = recv_2(Socket, Options),
     ok = ?LOG([{phase, s2}, {packet, S2Packet}], Options),
     
-    ok = check(Module:client_finish(S2Packet, State1, Options)),
+    Valid2 = Module:client_finish(S2Packet, State1, Options),
     {ok, [{rtmp_version,       ServerRtmpVersion},
           {server_app_version, ServerVersion},
           {client_app_version, ClientVersion},
           {server_timestmap,   ServerTimestamp},
-          {client_timestamp,   ClientTimestamp}]}.
+          {client_timestamp,   ClientTimestamp},
+          {validation_method,  ValidationMethod},
+          {valid,              Valid1 andalso Valid2}]}.
 
 -spec do_server_handshake(gen_tcp:socket(), #handshake_option{}) -> {ok, handshake_result()}.
 do_server_handshake(Socket, Options) ->
@@ -150,32 +154,34 @@ do_server_handshake(Socket, Options) ->
     ClientVersion = {V1, V2, V3, V4},
     ok = ?LOG([{phase, c1}, {client_timestamp, ClientTimestamp}, {client_version, ClientVersion}, {packet, C1Packet}], Options),
 
-    {Module, AuthentificationMethod} = 
+    {Module, ValidationMethod} = 
         if
             ClientVersion < {9,0,124,0}  -> {rtmp_handshake_plain, none};
             ClientVersion < {10,0,32,18} -> {rtmp_handshake_digest, digest_version1};
             true                         -> {rtmp_handshake_digest, digest_version2}
         end,
-    {ok, S1Packet, State0} = check(Module:s1(AuthentificationMethod, C1Packet, Options)),
+    {Valid1, S1Packet, State0} = Module:s1(ValidationMethod, C1Packet, Options),
     ok = ?LOG([{phase, s1}, {packet, S1Packet}], Options),
     ok = send_1(Socket, S1Packet, Options),
 
     %% s2,c2
-    {ok, S2Packet, State1} = check(Module:s2(State0, Options)),
+    {S2Packet, State1} = Module:s2(State0, Options),
     ok = ?LOG([{phase, s2}, {packet, S2Packet}], Options),
     ok = send_2(Socket, S2Packet, Options),
     C2Packet = recv_1(Socket, Options),
     ok = ?LOG([{phase, c2}, {packet, C2Packet}], Options),
 
-    ok = check(Module:server_finish(C2Packet, State1, Options)),
+    Valid2 = Module:server_finish(C2Packet, State1, Options),
     {ok, [{rtmp_version,       ServerRtmpVersion},
           {server_app_version, ServerVersion},
           {client_app_version, ClientVersion},
           {server_timestmap,   ServerTimestamp},
-          {client_timestamp,   ClientTimestamp}]}.
-    
+          {client_timestamp,   ClientTimestamp},
+          {validation_method,  ValidationMethod},
+          {valid,              Valid1 andalso Valid2}]}.
+
 -spec check(Result) -> OkValue when
-      Result  :: {error, Reason::term()} | OkValue,
+      Result  :: {error, Reason::term()} | OkValue,    
       OkValue :: term().
 check({error, Reason}) -> throw({?MODULE, {error, Reason}});
 check(Value)           -> Value.
