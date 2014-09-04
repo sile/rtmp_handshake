@@ -1,4 +1,4 @@
-all: compile eunit                                                   
+all: compile eunit
 
 compile:
 	@./rebar compile
@@ -19,5 +19,5 @@ edoc:
 	touch .dialyzer.plt
 	dialyzer --build_plt --plt .dialyzer.plt --apps erts kernel stdlib inets crypto compiler
 
-dialyze: .dialyzer.plt
+dialyze: .dialyzer.plt compile
 	dialyzer --plt .dialyzer.plt -r ebin
