@@ -17,7 +17,7 @@
               rtmp_version/0,
               application_version/0,
               milliseconds/0,
-              option/0,
+              option/0, options/0,
               handshake_result/0,
 
               validation_method/0
@@ -26,6 +26,7 @@
 %%--------------------------------------------------------------------------------
 %% Macros & Types
 %%--------------------------------------------------------------------------------
+-type options() :: [option()].
 -type option() :: {rtmp_version, rtmp_version()}
                 | {app_version,  application_version()}
                 | {timestamp,    milliseconds()}
@@ -49,7 +50,7 @@
 %%--------------------------------------------------------------------------------
 %% Exported Functions
 %%--------------------------------------------------------------------------------
--spec client_handshake(inet:socket(), [option()]) -> {ok, handshake_result()} | {error, Reason::term()}.
+-spec client_handshake(inet:socket(), options()) -> {ok, handshake_result()} | {error, Reason::term()}.
 client_handshake(Socket, Options) ->
     case check_socket(Socket) of
         {error, Reason} -> {error, Reason};
@@ -62,7 +63,7 @@ client_handshake(Socket, Options) ->
             end
     end.
 
--spec server_handshake(inet:socket(), [option()]) -> ok | {error, Reason::term()}.
+-spec server_handshake(inet:socket(), options()) -> ok | {error, Reason::term()}.
 server_handshake(Socket, Options) ->
     case check_socket(Socket) of
         {error, Reason} -> {error, Reason};
@@ -78,7 +79,7 @@ server_handshake(Socket, Options) ->
 %%--------------------------------------------------------------------------------
 %% Internal Functions
 %%--------------------------------------------------------------------------------
--spec parse_handshake_option([option()]) -> {ok, #handshake_option{}}.
+-spec parse_handshake_option(options()) -> {ok, #handshake_option{}}.
 parse_handshake_option(Options) ->
     Opt = #handshake_option{
              rtmp_version = proplists:get_value(rtmp_version, Options, 3),
