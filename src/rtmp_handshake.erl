@@ -203,8 +203,7 @@ recv_2(Socket, Options) ->
 
 -spec send_0_1(inet:socket(), rtmp_version(), binary(), #handshake_option{}) -> ok.
 send_0_1(Socket, RtmpVersion, Packet, _Options) ->
-    check(gen_tcp:send(Socket, <<RtmpVersion>>)),
-    check(gen_tcp:send(Socket, Packet)).
+    check(gen_tcp:send(Socket, <<RtmpVersion, Packet/binary>>)).
 
 -spec send_2(inet:socket(), binary(), #handshake_option{}) -> ok.
 send_2(Socket, Packet, _Options) ->
