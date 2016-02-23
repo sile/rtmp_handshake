@@ -97,7 +97,6 @@ do_client_handshake(Socket, Options) ->
     %% c0,c1
     ClientRtmpVersion = Options#handshake_option.rtmp_version,
     ok = ?LOG([{phase, c0}, {client_rtmp_version, ClientRtmpVersion}], Options),
-    ok = send_0(Socket, ClientRtmpVersion, Options),
 
     {Module, ValidationMethod} =
         if
@@ -107,7 +106,7 @@ do_client_handshake(Socket, Options) ->
         end,
     {C1Packet, State0} = Module:c1(ValidationMethod, Options),
     ok = ?LOG([{phase, c1}, {validation, ValidationMethod}, {client_version, ClientVersion}, {client_timestamp, ClientTimestamp}, {packet, C1Packet}], Options),
-    ok = send_1(Socket, C1Packet, Options),
+    ok = send_0_1(Socket, ClientRtmpVersion, C1Packet, Options),
 
     %% s0,s1
     ServerRtmpVersion = recv_0(Socket, Options),
@@ -148,7 +147,6 @@ do_server_handshake(Socket, Options) ->
                    true  -> ok
                end),
     ok = ?LOG([{phase, s0}, {server_rtmp_version, ServerRtmpVersion}], Options),
-    ok = send_0(Socket, ServerRtmpVersion, Options),
 
     %% c1,s1
     <<ClientTimestamp:32, V1, V2, V3, V4, _/binary>> = C1Packet = recv_1(Socket, Options),
@@ -163,7 +161,7 @@ do_server_handshake(Socket, Options) ->
         end,
     {Valid1, S1Packet, State0} = Module:s1(ValidationMethod, C1Packet, Options),
     ok = ?LOG([{phase, s1}, {packet, S1Packet}], Options),
-    ok = send_1(Socket, S1Packet, Options),
+    ok = send_0_1(Socket, ServerRtmpVersion, S1Packet, Options),
 
     %% s2,c2
     {S2Packet, State1} = Module:s2(State0, Options),
@@ -203,12 +201,9 @@ recv_2(Socket, Options) ->
     {ok, Packet} = check(gen_tcp:recv(Socket, ?HANDSHAKE_PACKET_SIZE, Options#handshake_option.recv_timeout)),
     iolist_to_binary(Packet).
 
--spec send_0(inet:socket(), rtmp_version(), #handshake_option{}) -> ok.
-send_0(Socket, RtmpVersion, _Options) ->
-    check(gen_tcp:send(Socket, <<RtmpVersion>>)).
-
--spec send_1(inet:socket(), binary(), #handshake_option{}) -> ok.
-send_1(Socket, Packet, _Options) ->
+-spec send_0_1(inet:socket(), rtmp_version(), binary(), #handshake_option{}) -> ok.
+send_0_1(Socket, RtmpVersion, Packet, _Options) ->
+    check(gen_tcp:send(Socket, <<RtmpVersion>>)),
     check(gen_tcp:send(Socket, Packet)).
 
 -spec send_2(inet:socket(), binary(), #handshake_option{}) -> ok.
