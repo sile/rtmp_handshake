@@ -20,7 +20,7 @@
         <<"Genuine Adobe Flash Media Server 001",
           16#f0,16#ee,16#c2,16#4a,16#80,16#68,16#be,16#e8,16#2e,16#00,16#d0,16#d1,16#02,16#9e,16#7e,16#57,
           16#6e,16#ec,16#5d,16#2d,16#29,16#80,16#6f,16#ab,16#93,16#b8,16#e6,16#36,16#cf,16#eb,16#31,16#ae>>).
-          
+
 -define(GENUINE_FP_KEY,
         <<"Genuine Adobe Flash Player 001",
           16#F0,16#EE,16#C2,16#4A,16#80,16#68,16#BE,16#E8,16#2E,16#00,16#D0,16#D1,16#02,16#9E,16#7E,16#57,
@@ -104,7 +104,7 @@ server_finish(C2Packet, State, _Options) ->
 -spec generate_phase1_packet_and_digest(scheme_version(), server|client, #handshake_option{}) -> {Packet::binary(), Digest::binary()}.
 generate_phase1_packet_and_digest(SchemeVersion, Role, Options) ->
     #handshake_option{timestamp = Timetamp, app_version = {V1, V2, V3, V4}} = Options,
-    Bytes = <<Timetamp:32, V1, V2, V3, V4, (crypto:rand_bytes(?HANDSHAKE_PACKET_SIZE - 8))/binary>>,
+    Bytes = <<Timetamp:32, V1, V2, V3, V4, (crypto:strong_rand_bytes(?HANDSHAKE_PACKET_SIZE - 8))/binary>>,
     {Left, _, Right} = extract_digest(SchemeVersion, Bytes),
     Digest = crypto:hmac(sha256, get_digest_key(Role), <<Left/binary, Right/binary>>),
     Phase1Packet = <<Left/binary, Digest/binary, Right/binary>>,
@@ -112,7 +112,7 @@ generate_phase1_packet_and_digest(SchemeVersion, Role, Options) ->
 
 -spec generate_phase2_packet(binary(), binary()) -> binary().
 generate_phase2_packet(Key, PeerDigest) ->
-    Bytes = crypto:rand_bytes(?HANDSHAKE_PACKET_SIZE - ?DIGEST_SIZE),
+    Bytes = crypto:strong_rand_bytes(?HANDSHAKE_PACKET_SIZE - ?DIGEST_SIZE),
     Digest = crypto:hmac(sha256, crypto:hmac(sha256, Key, PeerDigest), Bytes),
     <<Bytes/binary, Digest/binary>>.
 

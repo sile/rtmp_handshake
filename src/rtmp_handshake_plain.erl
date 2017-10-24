@@ -54,4 +54,4 @@ server_finish(_C2Packet, _State, _Options) ->
 -spec generate_phase1_packet(#handshake_option{}) -> binary().
 generate_phase1_packet(Options) ->
     #handshake_option{timestamp = Timetamp, app_version = {V1, V2, V3, V4}} = Options,
-    <<Timetamp:32, V1, V2, V3, V4, (crypto:rand_bytes(?HANDSHAKE_PACKET_SIZE - 8))/binary>>.
+    <<Timetamp:32, V1, V2, V3, V4, (crypto:strong_rand_bytes(?HANDSHAKE_PACKET_SIZE - 8))/binary>>.
