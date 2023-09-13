@@ -58,7 +58,7 @@ c1(AuthMethod, Options) ->
 c2(S1Packet, State, _Options) ->
     #state{scheme_version = SchemeVersion} = State,
     {Left, ServerDigest, Right} = extract_digest(SchemeVersion, S1Packet),
-    IsValid = ServerDigest =:= crypto:hmac(sha256, get_digest_key(server), <<Left/binary, Right/binary>>),
+    IsValid = ServerDigest =:= hmac(sha256, get_digest_key(server), <<Left/binary, Right/binary>>),
     C2Packet = generate_phase2_packet(?GENUINE_FP_KEY, ServerDigest),
     {IsValid, C2Packet, State#state{server_digest = ServerDigest}}.
 
@@ -66,7 +66,7 @@ c2(S1Packet, State, _Options) ->
 client_finish(S2Packet, State, _Options) ->
     #state{client_digest = ClientDigest} = State,
     <<Bytes:(?HANDSHAKE_PACKET_SIZE - ?DIGEST_SIZE)/binary, S2Digest/binary>> = S2Packet,
-    IsValid = S2Digest =:= crypto:hmac(sha256, crypto:hmac(sha256, ?GENUINE_FMS_KEY, ClientDigest), Bytes),
+    IsValid = S2Digest =:= hmac(sha256, hmac(sha256, ?GENUINE_FMS_KEY, ClientDigest), Bytes),
     IsValid.
 
 %% @hidden
@@ -76,7 +76,7 @@ s1(AuthMethod, C1Packet, Options) ->
                         digest_version2 -> version2
                     end,
     {Left, ClientDigest, Right} = extract_digest(SchemeVersion, C1Packet),
-    IsValid = ClientDigest =:= crypto:hmac(sha256, get_digest_key(client), <<Left/binary, Right/binary>>),
+    IsValid = ClientDigest =:= hmac(sha256, get_digest_key(client), <<Left/binary, Right/binary>>),
     {S1Packet, ServerDigest} = generate_phase1_packet_and_digest(SchemeVersion, server, Options),
     State = #state{
                scheme_version = SchemeVersion,
@@ -95,7 +95,7 @@ s2(State, _Options) ->
 server_finish(C2Packet, State, _Options) ->
     #state{server_digest = ServerDigest} = State,
     <<Bytes:(?HANDSHAKE_PACKET_SIZE - ?DIGEST_SIZE)/binary, C2Digest/binary>> = C2Packet,
-    IsValid = C2Digest =:= crypto:hmac(sha256, crypto:hmac(sha256, ?GENUINE_FP_KEY, ServerDigest), Bytes),
+    IsValid = C2Digest =:= hmac(sha256, hmac(sha256, ?GENUINE_FP_KEY, ServerDigest), Bytes),
     IsValid.
 
 %%--------------------------------------------------------------------------------
@@ -106,14 +106,14 @@ generate_phase1_packet_and_digest(SchemeVersion, Role, Options) ->
     #handshake_option{timestamp = Timetamp, app_version = {V1, V2, V3, V4}} = Options,
     Bytes = <<Timetamp:32, V1, V2, V3, V4, (crypto:strong_rand_bytes(?HANDSHAKE_PACKET_SIZE - 8))/binary>>,
     {Left, _, Right} = extract_digest(SchemeVersion, Bytes),
-    Digest = crypto:hmac(sha256, get_digest_key(Role), <<Left/binary, Right/binary>>),
+    Digest = hmac(sha256, get_digest_key(Role), <<Left/binary, Right/binary>>),
     Phase1Packet = <<Left/binary, Digest/binary, Right/binary>>,
     {Phase1Packet, Digest}.
 
 -spec generate_phase2_packet(binary(), binary()) -> binary().
 generate_phase2_packet(Key, PeerDigest) ->
     Bytes = crypto:strong_rand_bytes(?HANDSHAKE_PACKET_SIZE - ?DIGEST_SIZE),
-    Digest = crypto:hmac(sha256, crypto:hmac(sha256, Key, PeerDigest), Bytes),
+    Digest = hmac(sha256, hmac(sha256, Key, PeerDigest), Bytes),
     <<Bytes/binary, Digest/binary>>.
 
 -spec extract_digest(scheme_version(), binary()) -> {LeftBytes::binary(), Digest::binary(), RightBytes::binary()}.
@@ -129,3 +129,14 @@ extract_digest(version2, <<_:772/binary, P1, P2, P3, P4, _/binary>> = Bytes) ->
 -spec get_digest_key(server|client) -> binary().
 get_digest_key(server) -> binary:part(?GENUINE_FMS_KEY, 0, 36);
 get_digest_key(client) -> binary:part(?GENUINE_FP_KEY, 0, 30).
+
+-spec hmac(sha256, iodata(), iodata()) -> binary().
+-ifdef(OTP_RELEASE).
+-if(?OTP_RELEASE >= 23). % crypto:mac/4 was introduced at OTP 22.1
+hmac(SubType, Key, Data) -> crypto:mac(hmac, SubType, Key, Data).
+-else.
+hmac(SubType, Key, Data) -> crypto:hmac(SubType, Key, Data).
+-endif.
+-else.
+hmac(SubType, Key, Data) -> crypto:hmac(SubType, Key, Data).
+-endif.
